@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# update_all_repositories.sh
+# 指定ディレクトリ以下の全リポジトリを一括で最新化するスクリプト
+
+# 設定可能な変数
+REPOSITORIES_DIR="${REPOSITORIES_DIR:-repositories}"  # リポジトリディレクトリ
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"            # デフォルトブランチ
+
+# 使用方法を表示
+show_usage() {
+  echo "Usage: $0 [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  -d, --directory DIR    リポジトリディレクトリを指定 (デフォルト: $REPOSITORIES_DIR)"
+  echo "  -b, --branch BRANCH    デフォルトブランチを指定 (デフォルト: $DEFAULT_BRANCH)"
+  echo "  -h, --help            この使用方法を表示"
+  echo ""
+  echo "Environment Variables:"
+  echo "  REPOSITORIES_DIR       リポジトリディレクトリ (デフォルト: repositories)"
+  echo "  DEFAULT_BRANCH         デフォルトブランチ (デフォルト: master)"
+  echo ""
+  echo "Examples:"
+  echo "  $0                                    # デフォルト設定で実行"
+  echo "  $0 -d my-repos                       # カスタムディレクトリで実行"
+  echo "  $0 -b main                           # mainブランチを使用"
+  echo "  REPOSITORIES_DIR=repos $0            # 環境変数で設定"
+}
+
+# 引数解析
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -d|--directory)
+      REPOSITORIES_DIR="$2"
+      shift 2
+      ;;
+    -b|--branch)
+      DEFAULT_BRANCH="$2"
+      shift 2
+      ;;
+    -h|--help)
+      show_usage
+      exit 0
+      ;;
+    *)
+      echo "不明なオプション: $1"
+      show_usage
+      exit 1
+      ;;
+  esac
+done
+
+echo "=========================================="
+echo "リポジトリ一括更新スクリプト"
+echo "対象ディレクトリ: $REPOSITORIES_DIR"
+echo "デフォルトブランチ: $DEFAULT_BRANCH"
+echo "=========================================="
+echo ""
+
+# ディレクトリの存在確認
+if [ ! -d "$REPOSITORIES_DIR" ]; then
+  echo "[ERROR] ディレクトリが存在しません: $REPOSITORIES_DIR"
+  echo "環境変数REPOSITORIES_DIRまたは-dオプションで正しいパスを指定してください"
+  exit 1
+fi
+
+# 処理統計用の変数
+declare -i TOTAL_REPOS=0
+declare -i UPDATED_REPOS=0
+declare -i SKIPPED_REPOS=0
+declare -i ERROR_REPOS=0
+declare -a SKIPPED_LIST=()
+declare -a ERROR_LIST=()
+
+for repo in "$REPOSITORIES_DIR"/*; do
+  if [ -d "$repo/.git" ]; then
+    TOTAL_REPOS=$((TOTAL_REPOS + 1))
+    repo_name=$(basename "$repo")
+    echo "=============================="
+    echo "リポジトリ: $repo_name ($repo)"
+    
+    cd "$repo" || {
+      echo "[ERROR] ディレクトリに移動できませんでした: $repo"
+      ERROR_REPOS=$((ERROR_REPOS + 1))
+      ERROR_LIST+=("$repo_name")
+      continue
+    }
+    
+    # 現在のブランチを確認
+    current_branch=$(git branch --show-current 2>/dev/null || echo "不明")
+    echo "現在のブランチ: $current_branch"
+    
+    echo "fetch中..."
+    if ! git fetch; then
+      echo "[ERROR] fetchに失敗しました"
+      ERROR_REPOS=$((ERROR_REPOS + 1))
+      ERROR_LIST+=("$repo_name")
+      cd - > /dev/null || true
+      continue
+    fi
+    
+    # デフォルトブランチの存在確認
+    if git rev-parse --verify "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+      # ローカル変更がある場合は警告
+      if ! git diff-index --quiet HEAD --; then
+        echo "[警告] ローカルに未コミットの変更があります。"
+        echo "変更内容:"
+        git status --porcelain
+        echo "$DEFAULT_BRANCH への切り替えをスキップします。"
+        SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
+        SKIPPED_LIST+=("$repo_name (未コミットの変更)")
+      else
+        echo "$DEFAULT_BRANCH ブランチにcheckout中..."
+        if git checkout "$DEFAULT_BRANCH"; then
+          echo "$DEFAULT_BRANCH でpull実行"
+          if git pull; then
+            echo "[SUCCESS] 更新完了"
+            UPDATED_REPOS=$((UPDATED_REPOS + 1))
+          else
+            echo "[ERROR] pullに失敗しました"
+            ERROR_REPOS=$((ERROR_REPOS + 1))
+            ERROR_LIST+=("$repo_name")
+          fi
+        else
+          echo "[ERROR] チェックアウトに失敗しました"
+          ERROR_REPOS=$((ERROR_REPOS + 1))
+          ERROR_LIST+=("$repo_name")
+        fi
+      fi
+    else
+      echo "[警告] $DEFAULT_BRANCH ブランチが存在しません。このリポジトリはスキップします。"
+      echo "利用可能なブランチ:"
+      git branch -a | head -5
+      SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
+      SKIPPED_LIST+=("$repo_name ($DEFAULT_BRANCH ブランチなし)")
+    fi
+    echo ""
+    cd - > /dev/null || true
+  else
+    if [ -d "$repo" ]; then
+      echo "[SKIP] Gitリポジトリではありません: $(basename "$repo")"
+    fi
+  fi
+done
+
+# 処理結果サマリー
+echo ""
+echo "=========================================="
+echo "処理結果サマリー"
+echo "=========================================="
+echo "総リポジトリ数: $TOTAL_REPOS"
+echo "更新成功: $UPDATED_REPOS"
+echo "スキップ: $SKIPPED_REPOS"
+echo "エラー: $ERROR_REPOS"
+
+if [ ${#SKIPPED_LIST[@]} -gt 0 ]; then
+  echo ""
+  echo "スキップされたリポジトリ:"
+  for item in "${SKIPPED_LIST[@]}"; do
+    echo "  - $item"
+  done
+fi
+
+if [ ${#ERROR_LIST[@]} -gt 0 ]; then
+  echo ""
+  echo "エラーが発生したリポジトリ:"
+  for item in "${ERROR_LIST[@]}"; do
+    echo "  - $item"
+  done
+fi
+
+echo ""
+echo "処理完了！"
+
+# 終了コード
+if [ $ERROR_REPOS -gt 0 ]; then
+  exit 1
+else
+  exit 0
+fi

@@ -1,0 +1,39 @@
+# Git worktree workspace directories (default: issues/)
+issues/
+
+# Repository directories (default: repositories/)
+repositories/
+repos/
+
+# Local Claude Code configuration (not for public repo)
+CLAUDE.local.md
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.temporary/
+
+# Backup files
+*.bak
+*.backup
