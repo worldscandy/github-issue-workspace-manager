@@ -16,7 +16,9 @@ GitHub issueの作業用に複数リポジトリのワークスペースを自�
 
 ### update_all_repositories.sh
 - **一括リポジトリ更新**: 指定ディレクトリ内の全リポジトリを一括更新
-- **柔軟な設定**: ディレクトリパスとデフォルトブランチを設定可能
+- **再帰的探索**: 複数階層のディレクトリ構造に対応
+- **探索深度制御**: 最大探索深度を設定可能（デフォルト：3階層）
+- **柔軟な設定**: ディレクトリパス、デフォルトブランチ、探索深度を設定可能
 - **安全な更新**: 未コミットの変更がある場合は自動スキップ
 - **詳細なログ**: 各リポジトリの処理状況を詳細表示
 - **統計レポート**: 更新成功・スキップ・エラーの統計情報
@@ -106,6 +108,7 @@ chmod +x setup_issue_workspace.sh
 **オプション:**
 - `-d, --directory DIR`: リポジトリディレクトリを指定
 - `-b, --branch BRANCH`: デフォルトブランチを指定
+- `-m, --max-depth DEPTH`: 最大探索深度を指定（デフォルト：3）
 - `-h, --help`: ヘルプを表示
 
 **例:**
@@ -119,8 +122,14 @@ chmod +x setup_issue_workspace.sh
 # mainブランチを使用
 ./update_all_repositories.sh -b main
 
+# 探索深度を2階層に制限
+./update_all_repositories.sh -m 2
+
+# 複数オプションの組み合わせ
+./update_all_repositories.sh -d repositories/company -b main -m 4
+
 # 環境変数で設定
-REPOSITORIES_DIR=repos DEFAULT_BRANCH=main ./update_all_repositories.sh
+REPOSITORIES_DIR=repos DEFAULT_BRANCH=main MAX_DEPTH=2 ./update_all_repositories.sh
 ```
 
 ### 生成されるディレクトリ構造
@@ -134,13 +143,15 @@ issues/                              # ワークスペースディレクトリ�
     └── repo3/                       # Git worktreeディレクトリ
 
 repositories/                        # リポジトリクローン先（変更可能）
-├── org-name/                        # 組織/ユーザー別ディレクトリ
-│   ├── repo1/                       # 元リポジトリ
-│   ├── repo2/                       # 元リポジトリ
-│   └── repo3/                       # 元リポジトリ
-└── another-org/                     # 別の組織
-    └── repo4/                       # 元リポジトリ
+├── org-name/                        # 組織/ユーザー別ディレクトリ（2階層目）
+│   ├── repo1/                       # 元リポジトリ（3階層目）
+│   ├── repo2/                       # 元リポジトリ（3階層目）
+│   └── repo3/                       # 元リポジトリ（3階層目）
+└── another-org/                     # 別の組織（2階層目）
+    └── repo4/                       # 元リポジトリ（3階層目）
 ```
+
+**注意**: `update_all_repositories.sh`は指定ディレクトリから再帰的に探索し、デフォルトで最大3階層まで検索します。上記の例では`repositories/`が1階層目となるため、最大3階層まで探索されます。
 
 ### Issue情報の永続化
 
@@ -251,11 +262,35 @@ export REPOSITORIES_DIR=my-repos
 ### 2. 複数リポジトリの一括更新
 
 ```bash
-# 毎朝の作業開始前に全リポジトリを最新化
+# 毎朝の作業開始前に全リポジトリを最新化（再帰的探索）
 ./update_all_repositories.sh
 
 # 特定ディレクトリのリポジトリのみ更新
 ./update_all_repositories.sh -d repositories/company-name
+
+# 深い階層構造での探索（最大5階層まで）
+./update_all_repositories.sh -m 5
+
+# 浅い探索で高速実行（2階層まで）
+./update_all_repositories.sh -m 2
+```
+
+### 3. 複雑なディレクトリ構造での使用例
+
+```bash
+# 以下のような複雑な構造でも自動検出
+# project-root/
+#   ├── teams/
+#   │   ├── frontend/
+#   │   │   ├── web-app/        ← リポジトリ（3階層目）
+#   │   │   └── mobile-app/     ← リポジトリ（3階層目）
+#   │   └── backend/
+#   │       ├── api-server/     ← リポジトリ（3階層目）
+#   │       └── worker/         ← リポジトリ（3階層目）
+#   └── shared/
+#       └── common-lib/         ← リポジトリ（2階層目）
+
+./update_all_repositories.sh -d project-root -m 4
 ```
 
 ## 📝 ライセンス

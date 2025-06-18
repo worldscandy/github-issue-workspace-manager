@@ -5,6 +5,7 @@
 # 設定可能な変数
 REPOSITORIES_DIR="${REPOSITORIES_DIR:-repositories}"  # リポジトリディレクトリ
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"            # デフォルトブランチ
+MAX_DEPTH="${MAX_DEPTH:-3}"                           # 最大探索深度
 
 # 使用方法を表示
 show_usage() {
@@ -13,16 +14,19 @@ show_usage() {
   echo "Options:"
   echo "  -d, --directory DIR    リポジトリディレクトリを指定 (デフォルト: $REPOSITORIES_DIR)"
   echo "  -b, --branch BRANCH    デフォルトブランチを指定 (デフォルト: $DEFAULT_BRANCH)"
+  echo "  -m, --max-depth DEPTH  最大探索深度を指定 (デフォルト: $MAX_DEPTH)"
   echo "  -h, --help            この使用方法を表示"
   echo ""
   echo "Environment Variables:"
   echo "  REPOSITORIES_DIR       リポジトリディレクトリ (デフォルト: repositories)"
   echo "  DEFAULT_BRANCH         デフォルトブランチ (デフォルト: master)"
+  echo "  MAX_DEPTH              最大探索深度 (デフォルト: 3)"
   echo ""
   echo "Examples:"
   echo "  $0                                    # デフォルト設定で実行"
   echo "  $0 -d my-repos                       # カスタムディレクトリで実行"
   echo "  $0 -b main                           # mainブランチを使用"
+  echo "  $0 -m 2                              # 探索深度2で実行"
   echo "  REPOSITORIES_DIR=repos $0            # 環境変数で設定"
 }
 
@@ -35,6 +39,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -b|--branch)
       DEFAULT_BRANCH="$2"
+      shift 2
+      ;;
+    -m|--max-depth)
+      MAX_DEPTH="$2"
       shift 2
       ;;
     -h|--help)
@@ -53,6 +61,7 @@ echo "=========================================="
 echo "リポジトリ一括更新スクリプト"
 echo "対象ディレクトリ: $REPOSITORIES_DIR"
 echo "デフォルトブランチ: $DEFAULT_BRANCH"
+echo "最大探索深度: $MAX_DEPTH"
 echo "=========================================="
 echo ""
 
@@ -71,76 +80,100 @@ declare -i ERROR_REPOS=0
 declare -a SKIPPED_LIST=()
 declare -a ERROR_LIST=()
 
-for repo in "$REPOSITORIES_DIR"/*; do
-  if [ -d "$repo/.git" ]; then
-    TOTAL_REPOS=$((TOTAL_REPOS + 1))
-    repo_name=$(basename "$repo")
-    echo "=============================="
-    echo "リポジトリ: $repo_name ($repo)"
-    
-    cd "$repo" || {
-      echo "[ERROR] ディレクトリに移動できませんでした: $repo"
-      ERROR_REPOS=$((ERROR_REPOS + 1))
-      ERROR_LIST+=("$repo_name")
-      continue
-    }
-    
-    # 現在のブランチを確認
-    current_branch=$(git branch --show-current 2>/dev/null || echo "不明")
-    echo "現在のブランチ: $current_branch"
-    
-    echo "fetch中..."
-    if ! git fetch; then
-      echo "[ERROR] fetchに失敗しました"
-      ERROR_REPOS=$((ERROR_REPOS + 1))
-      ERROR_LIST+=("$repo_name")
-      cd - > /dev/null || true
-      continue
-    fi
-    
-    # デフォルトブランチの存在確認
-    if git rev-parse --verify "$DEFAULT_BRANCH" >/dev/null 2>&1; then
-      # ローカル変更がある場合は警告
-      if ! git diff-index --quiet HEAD --; then
-        echo "[警告] ローカルに未コミットの変更があります。"
-        echo "変更内容:"
-        git status --porcelain
-        echo "$DEFAULT_BRANCH への切り替えをスキップします。"
-        SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
-        SKIPPED_LIST+=("$repo_name (未コミットの変更)")
-      else
-        echo "$DEFAULT_BRANCH ブランチにcheckout中..."
-        if git checkout "$DEFAULT_BRANCH"; then
-          echo "$DEFAULT_BRANCH でpull実行"
-          if git pull; then
-            echo "[SUCCESS] 更新完了"
-            UPDATED_REPOS=$((UPDATED_REPOS + 1))
-          else
-            echo "[ERROR] pullに失敗しました"
-            ERROR_REPOS=$((ERROR_REPOS + 1))
-            ERROR_LIST+=("$repo_name")
-          fi
+# リポジトリ処理を行う関数
+process_repository() {
+  local repo_path="$1"
+  local repo_name
+  repo_name=$(basename "$repo_path")
+  
+  TOTAL_REPOS=$((TOTAL_REPOS + 1))
+  echo "=============================="
+  echo "リポジトリ: $repo_name ($repo_path)"
+  
+  cd "$repo_path" || {
+    echo "[ERROR] ディレクトリに移動できませんでした: $repo_path"
+    ERROR_REPOS=$((ERROR_REPOS + 1))
+    ERROR_LIST+=("$repo_name")
+    return
+  }
+  
+  # 現在のブランチを確認
+  current_branch=$(git branch --show-current 2>/dev/null || echo "不明")
+  echo "現在のブランチ: $current_branch"
+  
+  echo "fetch中..."
+  if ! git fetch; then
+    echo "[ERROR] fetchに失敗しました"
+    ERROR_REPOS=$((ERROR_REPOS + 1))
+    ERROR_LIST+=("$repo_name")
+    cd - > /dev/null || true
+    return
+  fi
+  
+  # デフォルトブランチの存在確認
+  if git rev-parse --verify "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+    # ローカル変更がある場合は警告
+    if ! git diff-index --quiet HEAD --; then
+      echo "[警告] ローカルに未コミットの変更があります。"
+      echo "変更内容:"
+      git status --porcelain
+      echo "$DEFAULT_BRANCH への切り替えをスキップします。"
+      SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
+      SKIPPED_LIST+=("$repo_name (未コミットの変更)")
+    else
+      echo "$DEFAULT_BRANCH ブランチにcheckout中..."
+      if git checkout "$DEFAULT_BRANCH"; then
+        echo "$DEFAULT_BRANCH でpull実行"
+        if git pull; then
+          echo "[SUCCESS] 更新完了"
+          UPDATED_REPOS=$((UPDATED_REPOS + 1))
         else
-          echo "[ERROR] チェックアウトに失敗しました"
+          echo "[ERROR] pullに失敗しました"
           ERROR_REPOS=$((ERROR_REPOS + 1))
           ERROR_LIST+=("$repo_name")
         fi
+      else
+        echo "[ERROR] チェックアウトに失敗しました"
+        ERROR_REPOS=$((ERROR_REPOS + 1))
+        ERROR_LIST+=("$repo_name")
       fi
-    else
-      echo "[警告] $DEFAULT_BRANCH ブランチが存在しません。このリポジトリはスキップします。"
-      echo "利用可能なブランチ:"
-      git branch -a | head -5
-      SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
-      SKIPPED_LIST+=("$repo_name ($DEFAULT_BRANCH ブランチなし)")
     fi
-    echo ""
-    cd - > /dev/null || true
   else
-    if [ -d "$repo" ]; then
-      echo "[SKIP] Gitリポジトリではありません: $(basename "$repo")"
-    fi
+    echo "[警告] $DEFAULT_BRANCH ブランチが存在しません。このリポジトリはスキップします。"
+    echo "利用可能なブランチ:"
+    git branch -a | head -5
+    SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
+    SKIPPED_LIST+=("$repo_name ($DEFAULT_BRANCH ブランチなし)")
   fi
-done
+  echo ""
+  cd - > /dev/null || true
+}
+
+# 再帰的にディレクトリを探索する関数
+find_repositories() {
+  local search_dir="$1"
+  local current_depth="$2"
+  
+  if [ "$current_depth" -gt "$MAX_DEPTH" ]; then
+    return
+  fi
+  
+  for item in "$search_dir"/*; do
+    if [ -d "$item" ]; then
+      if [ -d "$item/.git" ]; then
+        # Gitリポジトリが見つかった場合
+        process_repository "$item"
+      else
+        # 通常のディレクトリの場合、再帰的に探索
+        find_repositories "$item" $((current_depth + 1))
+      fi
+    fi
+  done
+}
+
+# 探索開始
+find_repositories "$REPOSITORIES_DIR" 1
+
 
 # 処理結果サマリー
 echo ""
