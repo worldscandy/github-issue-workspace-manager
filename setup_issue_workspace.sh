@@ -119,7 +119,6 @@ case "$COMMAND" in
         fi
       fi
       
-      echo "  利用可能なリポジトリ: frontend, backend, api, database, mobile, docs"
       echo "  現在のワークスペース${existing_repos_in_workspace}"
       echo -n "  追加するリポジトリをスペース区切りで入力: "
       read -r repo_input

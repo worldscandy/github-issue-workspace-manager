@@ -77,7 +77,7 @@ chmod +x setup_issue_workspace.sh
 **例:**
 ```bash
 # 新しいワークスペースを作成（組織/ユーザー名はIssue URLから自動抽出）
-./setup_issue_workspace.sh create https://github.com/your-username/main-repo/issues/123 frontend backend
+./setup_issue_workspace.sh create https://github.com/your-username/main-repo/issues/123 repo1 repo2
 ```
 
 #### 2. 既存ワークスペースの更新
@@ -177,8 +177,8 @@ SAFE_BRANCH_TITLE="Feature_Request"
 ```
 
 **例:**
-- `frontend-123/Feature_Request`
-- `backend-123/Feature_Request`
+- `repo1-123/Feature_Request`
+- `repo2-123/Feature_Request`
 
 ## 🎯 特徴
 
@@ -200,13 +200,13 @@ SAFE_BRANCH_TITLE="Feature_Request"
 ==========================================
 [INFO] ワークスペース更新処理が完了しました
 ==========================================
-[SUCCESS] 追加されたリポジトリ (2個): frontend backend
+[SUCCESS] 追加されたリポジトリ (2個): repo1 repo2
 [SKIPPED] スキップされたリポジトリ (1個): common
 [INFO] 現在のワークスペース内容:
-  - frontend
-  - backend
-  - common
-  - database
+  - repo1
+  - repo2
+  - repo3
+  - repo4
 ==========================================
 ```
 
@@ -249,14 +249,14 @@ export REPOSITORIES_DIR=my-repos
 
 ```bash
 # 1. Issue URLから新しいワークスペースを作成
-./setup_issue_workspace.sh create https://github.com/company/main-repo/issues/456 frontend backend api
+./setup_issue_workspace.sh create https://github.com/company/main-repo/issues/456 repo1 repo2 repo3
 
 # 2. 開発中に追加のリポジトリが必要になった場合
 ./setup_issue_workspace.sh update
 
 # 3. ワークスペース選択（インタラクティブ）
 #    → "1) issues/New_Feature_main-repo-456"を選択
-#    → "database mobile"を入力
+#    → 追加するリポジトリ名を入力
 ```
 
 ### 2. 複数リポジトリの一括更新
