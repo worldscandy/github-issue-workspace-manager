@@ -374,7 +374,7 @@ for repo in "${REPO_LIST[@]}"; do
   if [ -z "$SAFE_BRANCH_TITLE" ]; then
     SAFE_BRANCH_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
   fi
-  BRANCH_NAME="${repo}-${ISSUE_NUMBER}/$SAFE_BRANCH_TITLE"
+  BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}/$SAFE_BRANCH_TITLE"
   # masterブランチがなければエラー
   if ! git rev-parse --verify master >/dev/null 2>&1; then
     echo "[ERROR] masterブランチが存在しません: $repo"
