@@ -283,6 +283,7 @@ elif [ "$MODE" = "update" ]; then
   ISSUE_INFO_FILE="$ISSUE_PATH/.issue-info"
   if [ -f "$ISSUE_INFO_FILE" ]; then
     echo "[INFO] Issue情報ファイルを読み込み中: $ISSUE_INFO_FILE"
+    # shellcheck source=/dev/null
     source "$ISSUE_INFO_FILE"
     echo "[INFO] 読み込まれたissue情報: 組織=$ORG_NAME, リポジトリ=$REPO_NAME, Issue番号=$ISSUE_NUMBER"
     echo "[INFO] Issueタイトル: $ISSUE_TITLE"
