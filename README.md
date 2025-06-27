@@ -77,7 +77,7 @@ chmod +x setup_issue_workspace.sh
 **例:**
 ```bash
 # 新しいワークスペースを作成（組織/ユーザー名はIssue URLから自動抽出）
-./setup_issue_workspace.sh create https://github.com/your-username/main-repo/issues/123 repo1 repo2
+./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/123 repo1 repo2
 ```
 
 #### 2. 既存ワークスペースの更新
@@ -126,7 +126,7 @@ chmod +x setup_issue_workspace.sh
 ./update_all_repositories.sh -m 2
 
 # 複数オプションの組み合わせ
-./update_all_repositories.sh -d repositories/company -b main -m 4
+./update_all_repositories.sh -d repositories/my-org -b main -m 4
 
 # 環境変数で設定
 REPOSITORIES_DIR=repos DEFAULT_BRANCH=main MAX_DEPTH=2 ./update_all_repositories.sh
@@ -173,12 +173,13 @@ SAFE_BRANCH_TITLE="Feature_Request"
 各リポジトリには以下の形式でブランチが作成されます：
 
 ```
-<repository_name>-<issue_number>/<sanitized_issue_title>
+<issue_origin_repo>-<issue_number>/<sanitized_issue_title>
 ```
 
 **例:**
-- `repo1-123/Feature_Request`
-- `repo2-123/Feature_Request`
+Issue URLが `https://github.com/owner/main-repo/issues/123` の場合：
+- `main-repo-123/Feature_Request` (全リポジトリで共通)
+- すべてのworktreeリポジトリで同じブランチ名が使用される
 
 ## 🎯 特徴
 
@@ -228,10 +229,7 @@ Issue URLから組織/ユーザー名を自動抽出します（設定不要）
 #### updateモード
 `.issue-info`ファイルから情報を自動継承します（設定不要）
 
-環境変数 `GITHUB_ORG` を設定することで、手動入力を省略できます：
-```bash
-export GITHUB_ORG=your-organization-name
-```
+**注意**: 環境変数 `GITHUB_ORG` は通常不要です。Issue URLから組織名が自動抽出されるため、手動入力が求められる場合のみフォールバックとして使用されます。
 
 #### ディレクトリのカスタマイズ
 
@@ -249,7 +247,7 @@ export REPOSITORIES_DIR=my-repos
 
 ```bash
 # 1. Issue URLから新しいワークスペースを作成
-./setup_issue_workspace.sh create https://github.com/company/main-repo/issues/456 repo1 repo2 repo3
+./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/456 repo1 repo2 repo3
 
 # 2. 開発中に追加のリポジトリが必要になった場合
 ./setup_issue_workspace.sh update
@@ -266,7 +264,7 @@ export REPOSITORIES_DIR=my-repos
 ./update_all_repositories.sh
 
 # 特定ディレクトリのリポジトリのみ更新
-./update_all_repositories.sh -d repositories/company-name
+./update_all_repositories.sh -d repositories/org-name
 
 # 深い階層構造での探索（最大5階層まで）
 ./update_all_repositories.sh -m 5
