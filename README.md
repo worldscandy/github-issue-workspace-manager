@@ -6,9 +6,9 @@ GitHub issueの作業用に複数リポジトリのワークスペースを自�
 
 ### setup_issue_workspace.sh
 - **自動ワークスペース作成**: GitHub issueからワークスペースディレクトリを自動生成
+- **組織別階層管理**: 各リポジトリの実際の所属組織に基づいた自動階層化
 - **Git worktree管理**: 各リポジトリを独立したworktreeとして管理
 - **Issue情報の永続化**: `.issue-info`ファイルでissue情報を保存・継承
-- **インタラクティブ操作**: 直感的なメニューで簡単操作
 - **重複チェック**: 既存リポジトリの自動検出とスキップ
 - **自動ブランチ作成**: issue番号とタイトルから一貫したブランチ名を生成
 - **エラー復旧**: 孤立したworktreeの自動クリーンアップ
@@ -54,10 +54,7 @@ chmod +x setup_issue_workspace.sh
 # 新しいワークスペースを作成
 ./setup_issue_workspace.sh create https://github.com/owner/repo/issues/123 repo1 repo2
 
-# 既存のワークスペースにリポジトリを追加（インタラクティブ）
-./setup_issue_workspace.sh update
-
-# 直接指定でリポジトリを追加
+# 既存のワークスペースにリポジトリを追加
 ./setup_issue_workspace.sh update issues/workspace_name new-repo
 
 # 全リポジトリを一括更新
@@ -82,21 +79,14 @@ chmod +x setup_issue_workspace.sh
 
 #### 2. 既存ワークスペースの更新
 
-**完全インタラクティブモード（推奨）:**
-```bash
-./setup_issue_workspace.sh update
-```
-- ワークスペースを選択メニューから選択
-- 追加するリポジトリを入力
-
-**リポジトリ指定でワークスペース選択:**
-```bash
-./setup_issue_workspace.sh update <repo1> [repo2 ...]
-```
-
-**完全指定:**
 ```bash
 ./setup_issue_workspace.sh update <workspace_dir> <repo1> [repo2 ...]
+```
+
+**例:**
+```bash
+# 既存ワークスペースにリポジトリを追加
+./setup_issue_workspace.sh update issues/Feature_Request_main-repo-123 new-repo1 new-repo2
 ```
 
 #### 3. 全リポジトリの一括更新
@@ -138,18 +128,25 @@ REPOSITORIES_DIR=repos DEFAULT_BRANCH=main MAX_DEPTH=2 ./update_all_repositories
 issues/                              # ワークスペースディレクトリ（変更可能）
 └── <Issue_Title>_<repo>-<issue_number>/
     ├── .issue-info                  # Issue情報保存ファイル
-    ├── repo1/                       # Git worktreeディレクトリ
-    ├── repo2/                       # Git worktreeディレクトリ
-    └── repo3/                       # Git worktreeディレクトリ
+    ├── org-name-1/                  # 各リポジトリの実際の所属組織別ディレクトリ
+    │   ├── repo1/                   # Git worktreeディレクトリ
+    │   └── repo2/                   # Git worktreeディレクトリ
+    └── org-name-2/                  # 別の組織のリポジトリ
+        └── repo3/                   # Git worktreeディレクトリ
 
 repositories/                        # リポジトリクローン先（変更可能）
-├── org-name/                        # 組織/ユーザー別ディレクトリ（2階層目）
+├── org-name-1/                      # 組織/ユーザー別ディレクトリ（2階層目）
 │   ├── repo1/                       # 元リポジトリ（3階層目）
-│   ├── repo2/                       # 元リポジトリ（3階層目）
-│   └── repo3/                       # 元リポジトリ（3階層目）
-└── another-org/                     # 別の組織（2階層目）
+│   └── repo2/                       # 元リポジトリ（3階層目）
+└── org-name-2/                      # 別の組織（2階層目）
+    ├── repo3/                       # 元リポジトリ（3階層目）
     └── repo4/                       # 元リポジトリ（3階層目）
 ```
+
+**重要な特徴**:
+- ワークスペース内の組織ディレクトリは、各リポジトリの**実際の所属組織**に基づいて自動的に作成されます
+- 複数の組織のリポジトリを同じワークスペースで管理できます
+- 例：異なる組織のリポジトリが混在する場合、それぞれ適切な組織ディレクトリに配置されます
 
 **注意**: `update_all_repositories.sh`は指定ディレクトリから再帰的に探索し、デフォルトで最大3階層まで検索します。上記の例では`repositories/`が1階層目となるため、最大3階層まで探索されます。
 
@@ -183,11 +180,12 @@ Issue URLが `https://github.com/owner/main-repo/issues/123` の場合：
 
 ## 🎯 特徴
 
-### インタラクティブ機能
+### 組織別階層管理
 
-- **ワークスペース選択**: 既存ワークスペースの一覧から選択
-- **既存リポジトリ表示**: 各ワークスペースの現在の内容を表示
-- **重複防止**: 追加済みリポジトリの自動検出
+- **自動組織検出**: 各リポジトリの実際の所属組織を自動検出
+- **階層化配置**: 組織別ディレクトリに自動配置
+- **複数組織対応**: 異なる組織のリポジトリを同一ワークスペースで管理
+- **重複防止**: 追加済みリポジトリの自動検出とスキップ
 
 ### エラーハンドリング
 
@@ -223,13 +221,15 @@ gh auth login
 
 ### リポジトリ構造の準備
 
-#### createモード
-Issue URLから組織/ユーザー名を自動抽出します（設定不要）
+#### 組織名の自動検出
 
-#### updateモード
-`.issue-info`ファイルから情報を自動継承します（設定不要）
+各リポジトリの所属組織は以下の方法で自動検出されます：
 
-**注意**: 環境変数 `GITHUB_ORG` は通常不要です。Issue URLから組織名が自動抽出されるため、手動入力が求められる場合のみフォールバックとして使用されます。
+1. **リポジトリ構造からの検出**: `repositories/<org-name>/<repo-name>` 構造をスキャン
+2. **自動階層化**: 検出された組織名でワークスペース内にディレクトリを自動作成
+3. **複数組織対応**: 異なる組織のリポジトリを同一ワークスペースで管理可能
+
+**注意**: 環境変数 `GITHUB_ORG` は通常不要です。各リポジトリの実際の所属組織が自動検出されるため、手動設定は基本的に不要です。
 
 #### ディレクトリのカスタマイズ
 
@@ -247,14 +247,19 @@ export REPOSITORIES_DIR=my-repos
 
 ```bash
 # 1. Issue URLから新しいワークスペースを作成
+# 各リポジトリの所属組織が自動検出され、適切な組織ディレクトリに配置されます
 ./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/456 repo1 repo2 repo3
 
-# 2. 開発中に追加のリポジトリが必要になった場合
-./setup_issue_workspace.sh update
+# 例：以下のような構造が自動作成されます
+# issues/New_Feature_main-repo-456/
+# ├── company-org/
+# │   ├── repo1/     # company-org組織のリポジトリ
+# │   └── repo2/     # company-org組織のリポジトリ  
+# └── personal-org/
+#     └── repo3/     # personal-org組織のリポジトリ
 
-# 3. ワークスペース選択（インタラクティブ）
-#    → "1) issues/New_Feature_main-repo-456"を選択
-#    → 追加するリポジトリ名を入力
+# 2. 開発中に追加のリポジトリが必要になった場合
+./setup_issue_workspace.sh update issues/New_Feature_main-repo-456 additional-repo
 ```
 
 ### 2. 複数リポジトリの一括更新

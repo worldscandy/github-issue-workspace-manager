@@ -20,6 +20,27 @@ set -e
 REPOSITORIES_DIR="${REPOSITORIES_DIR:-repositories}"  # リポジトリクローン先ディレクトリ
 WORKSPACES_DIR="${WORKSPACES_DIR:-issues}"            # ワークスペース作成先ディレクトリ
 
+# リポジトリの実際の所属組織名を検出する関数
+detect_repo_org() {
+  local repo_name="$1"
+  
+  # repositories/<org>/<repo> の構造から組織名を検索
+  if [ -d "$REPOSITORIES_DIR" ]; then
+    local found_org=""
+    for org_dir in "$REPOSITORIES_DIR"/*; do
+      if [ -d "$org_dir" ] && [ -d "$org_dir/$repo_name/.git" ]; then
+        found_org=$(basename "$org_dir")
+        echo "$found_org"
+        return 0
+      fi
+    done
+  fi
+  
+  # 見つからない場合は空文字列を返す
+  echo ""
+  return 1
+}
+
 # 使用方法を表示する関数
 show_usage() {
   echo "Usage:"
@@ -337,27 +358,20 @@ for repo in "${REPO_LIST[@]}"; do
   echo "------------------------------"
   echo "[INFO] リポジトリ: $repo を処理中..."
   
-  # 組織名を決定
-  REPO_ORG=""
-  if [ "$MODE" = "create" ] && [ -n "$ORG_NAME" ]; then
-    REPO_ORG="$ORG_NAME"
-  elif [ "$MODE" = "update" ] && [ -n "$ORG_NAME" ]; then
-    REPO_ORG="$ORG_NAME"
-    echo "[INFO] Issue情報ファイルから組織名を使用: $REPO_ORG"
-  elif [ -n "$GITHUB_ORG" ]; then
-    REPO_ORG="$GITHUB_ORG"
-    echo "[INFO] GITHUB_ORG環境変数を使用: $REPO_ORG"
-  else
-    echo -n "GitHubの組織名またはユーザー名を入力してください: "
-    read -r REPO_ORG
-    
-    if [ -z "$REPO_ORG" ]; then
-      echo "[ERROR] GitHub組織/ユーザー名が指定されていません"
-      echo "環境変数で設定することもできます: export GITHUB_ORG=your-name"
-      FAILED_REPOS+=("$repo")
-      continue
-    fi
+  # 各リポジトリの実際の所属組織名を検出
+  REPO_ORG=$(detect_repo_org "$repo")
+  
+  if [ -z "$REPO_ORG" ]; then
+    echo "[ERROR] リポジトリ '$repo' の所属組織を検出できませんでした"
+    echo "以下のいずれかの構造でリポジトリが存在することを確認してください:"
+    echo "  $REPOSITORIES_DIR/<org-name>/$repo/"
+    echo "例: $REPOSITORIES_DIR/org-name/$repo/"
+    echo "    $REPOSITORIES_DIR/company-name/$repo/"
+    FAILED_REPOS+=("$repo")
+    continue
   fi
+  
+  echo "[INFO] 検出された組織名: $REPO_ORG"
   
   SOURCE_REPO_PATH="$REPOSITORIES_DIR/$REPO_ORG/$repo"
   
@@ -383,8 +397,8 @@ for repo in "${REPO_LIST[@]}"; do
     cd - > /dev/null
     continue
   fi
-  # worktree先ディレクトリ（絶対パス）
-  WORKTREE_PATH="$(pwd | sed 's|/repositories/.*||')/$ISSUE_PATH/$repo"
+  # worktree先ディレクトリ（絶対パス）：組織名を挟んだ新構造
+  WORKTREE_PATH="$(pwd | sed 's|/repositories/.*||')/$ISSUE_PATH/$REPO_ORG/$repo"
   # 既存なら確認メッセージ
   if [ -d "$WORKTREE_PATH" ]; then
     echo "[WARN] $repo は既にワークスペースに存在します ($WORKTREE_PATH)。"
@@ -397,6 +411,11 @@ for repo in "${REPO_LIST[@]}"; do
   if ! git show-ref --verify --quiet refs/heads/"$BRANCH_NAME"; then
     git branch "$BRANCH_NAME" master
   fi
+  
+  # 組織ディレクトリを作成（存在しない場合）
+  ORG_DIR="$(pwd | sed 's|/repositories/.*||')/$ISSUE_PATH/$REPO_ORG"
+  mkdir -p "$ORG_DIR"
+  
   # worktree追加
   if git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"; then
     echo "[INFO] $WORKTREE_PATH にworktree追加完了 (ブランチ: $BRANCH_NAME)"
