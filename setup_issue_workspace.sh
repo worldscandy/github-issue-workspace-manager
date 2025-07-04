@@ -257,9 +257,15 @@ if [ "$MODE" = "create" ]; then
     exit 1
   fi
 
-  # ディレクトリ名生成（スペース・記号を_に変換）
-  SAFE_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
-  ISSUE_DIR="${SAFE_TITLE}_${REPO_NAME}-${ISSUE_NUMBER}"
+  # ディレクトリ名生成（マルチバイト文字チェック）
+  if echo "$ISSUE_TITLE" | LC_ALL=C grep -q '[^\x00-\x7F]'; then
+    # マルチバイト文字が含まれている場合はissue番号のみ使用
+    ISSUE_DIR="${REPO_NAME}-${ISSUE_NUMBER}"
+  else
+    # 英数字のみの場合は従来通り
+    SAFE_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+    ISSUE_DIR="${SAFE_TITLE}_${REPO_NAME}-${ISSUE_NUMBER}"
+  fi
   ISSUE_PATH="$WORKSPACES_DIR/$ISSUE_DIR"
 
   # ワークスペースディレクトリの状態をチェック
@@ -385,14 +391,27 @@ for repo in "${REPO_LIST[@]}"; do
   fi
   cd "$SOURCE_REPO_PATH"
   git fetch
-  # ブランチ名生成（SAFE_BRANCH_TITLEが既に設定されている場合はそれを使用）
+  # ブランチ名生成（マルチバイト文字チェック）
   if [ -z "$SAFE_BRANCH_TITLE" ]; then
-    SAFE_BRANCH_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+    if echo "$ISSUE_TITLE" | LC_ALL=C grep -q '[^\x00-\x7F]'; then
+      # マルチバイト文字が含まれている場合はissue番号のみ使用
+      BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}"
+    else
+      # 英数字のみの場合は従来通り
+      SAFE_BRANCH_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+      BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}/$SAFE_BRANCH_TITLE"
+    fi
+  else
+    BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}/$SAFE_BRANCH_TITLE"
   fi
-  BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}/$SAFE_BRANCH_TITLE"
-  # masterブランチがなければエラー
-  if ! git rev-parse --verify master >/dev/null 2>&1; then
-    echo "[ERROR] masterブランチが存在しません: $repo"
+  # main または master ブランチをチェック
+  DEFAULT_BRANCH=""
+  if git rev-parse --verify main >/dev/null 2>&1; then
+    DEFAULT_BRANCH="main"
+  elif git rev-parse --verify master >/dev/null 2>&1; then
+    DEFAULT_BRANCH="master"
+  else
+    echo "[ERROR] main または master ブランチが存在しません: $repo"
     FAILED_REPOS+=("$repo")
     cd - > /dev/null
     continue
@@ -407,9 +426,9 @@ for repo in "${REPO_LIST[@]}"; do
     cd - > /dev/null
     continue
   fi
-  # ブランチが存在しなければmasterから作成
+  # ブランチが存在しなければデフォルトブランチから作成
   if ! git show-ref --verify --quiet refs/heads/"$BRANCH_NAME"; then
-    git branch "$BRANCH_NAME" master
+    git branch "$BRANCH_NAME" "$DEFAULT_BRANCH"
   fi
   
   # 組織ディレクトリを作成（存在しない場合）
