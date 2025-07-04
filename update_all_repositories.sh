@@ -123,6 +123,14 @@ process_repository() {
     else
       echo "$DEFAULT_BRANCH ブランチにcheckout中..."
       if git checkout "$DEFAULT_BRANCH"; then
+        # submoduleが存在する場合は事前に状態を同期
+        if [ -f ".gitmodules" ] && [ -s ".gitmodules" ]; then
+          echo "submodule状態同期中..."
+          if ! git submodule update --init; then
+            echo "[WARNING] submodule同期に失敗しました"
+          fi
+        fi
+        
         echo "$DEFAULT_BRANCH でpull実行"
         if git pull; then
           echo "[SUCCESS] 更新完了"
