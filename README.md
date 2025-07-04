@@ -11,6 +11,8 @@ GitHub issueの作業用に複数リポジトリのワークスペースを自�
 - **Issue情報の永続化**: `.issue-info`ファイルでissue情報を保存・継承
 - **重複チェック**: 既存リポジトリの自動検出とスキップ
 - **自動ブランチ作成**: issue番号とタイトルから一貫したブランチ名を生成
+- **日本語対応**: マルチバイト文字を含むissueタイトルにも対応
+- **main/masterブランチ対応**: 自動的に適切なデフォルトブランチを検出
 - **エラー復旧**: 孤立したworktreeの自動クリーンアップ
 - **詳細レポート**: 成功・スキップ・失敗の処理結果サマリー
 
@@ -127,7 +129,8 @@ REPOSITORIES_DIR=repos DEFAULT_BRANCH=main MAX_DEPTH=2 ./update_all_repositories
 
 ```
 issues/                              # ワークスペースディレクトリ（変更可能）
-└── <Issue_Title>_<repo>-<issue_number>/
+└── <Issue_Title>_<repo>-<issue_number>/  # 英語の場合
+│   または <repo>-<issue_number>/     # 日本語を含む場合
     ├── .issue-info                  # Issue情報保存ファイル
     ├── org-name-1/                  # 各リポジトリの実際の所属組織別ディレクトリ
     │   ├── repo1/                   # Git worktreeディレクトリ
@@ -170,14 +173,25 @@ SAFE_BRANCH_TITLE="Feature_Request"
 
 各リポジトリには以下の形式でブランチが作成されます：
 
+#### 英語のissueタイトルの場合
 ```
 <issue_origin_repo>-<issue_number>/<sanitized_issue_title>
 ```
 
 **例:**
-Issue URLが `https://github.com/owner/main-repo/issues/123` の場合：
+Issue URLが `https://github.com/owner/main-repo/issues/123` でタイトルが "Feature Request" の場合：
 - `main-repo-123/Feature_Request` (全リポジトリで共通)
-- すべてのworktreeリポジトリで同じブランチ名が使用される
+
+#### 日本語を含むissueタイトルの場合
+```
+<issue_origin_repo>-<issue_number>
+```
+
+**例:**
+Issue URLが `https://github.com/owner/main-repo/issues/456` でタイトルが "新機能の実装" の場合：
+- `main-repo-456` (全リポジトリで共通)
+
+**注意**: マルチバイト文字（日本語、中国語など）が含まれている場合は、Git ブランチ名の制約を考慮してissue番号のみを使用します。
 
 ## 🎯 特徴
 
@@ -345,3 +359,9 @@ repositories/org-name/repo-name/.git
 # 間違った構造
 repositories/repo-name/.git
 ```
+
+**Q: 日本語のissueタイトルでエラーが発生する**
+A: 最新版のスクリプトではマルチバイト文字に対応しています。issue番号のみでブランチ名とディレクトリ名が生成されます。
+
+**Q: "masterブランチが存在しません" エラー**
+A: 最新版のスクリプトではmain/masterブランチを自動検出します。どちらも存在しない場合はリポジトリの状態を確認してください。
