@@ -258,12 +258,14 @@ if [ "$MODE" = "create" ]; then
   fi
 
   # ディレクトリ名生成（マルチバイト文字チェック）
-  if echo "$ISSUE_TITLE" | LC_ALL=C grep -q '[^\x00-\x7F]'; then
+  # 改行文字を除去してからチェック
+  CLEAN_TITLE=$(echo "$ISSUE_TITLE" | tr -d '\n\r')
+  if printf '%s' "$CLEAN_TITLE" | LC_ALL=C grep -q '[^ -~]'; then
     # マルチバイト文字が含まれている場合はissue番号のみ使用
     ISSUE_DIR="${REPO_NAME}-${ISSUE_NUMBER}"
   else
     # 英数字のみの場合は従来通り
-    SAFE_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+    SAFE_TITLE=$(echo "$CLEAN_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
     ISSUE_DIR="${SAFE_TITLE}_${REPO_NAME}-${ISSUE_NUMBER}"
   fi
   ISSUE_PATH="$WORKSPACES_DIR/$ISSUE_DIR"
@@ -393,12 +395,14 @@ for repo in "${REPO_LIST[@]}"; do
   git fetch
   # ブランチ名生成（マルチバイト文字チェック）
   if [ -z "$SAFE_BRANCH_TITLE" ]; then
-    if echo "$ISSUE_TITLE" | LC_ALL=C grep -q '[^\x00-\x7F]'; then
+    # 改行文字を除去してからチェック
+    CLEAN_TITLE=$(echo "$ISSUE_TITLE" | tr -d '\n\r')
+    if printf '%s' "$CLEAN_TITLE" | LC_ALL=C grep -q '[^ -~]'; then
       # マルチバイト文字が含まれている場合はissue番号のみ使用
       BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}"
     else
       # 英数字のみの場合は従来通り
-      SAFE_BRANCH_TITLE=$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+      SAFE_BRANCH_TITLE=$(echo "$CLEAN_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
       BRANCH_NAME="${REPO_NAME}-${ISSUE_NUMBER}/$SAFE_BRANCH_TITLE"
     fi
   else
