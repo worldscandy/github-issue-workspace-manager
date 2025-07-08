@@ -1,5 +1,7 @@
 # Git worktree workspace directories (default: issues/)
 issues/
+issues/**
+!issues/.gitkeep
 
 # Repository directories (default: repositories/)
 repositories/
