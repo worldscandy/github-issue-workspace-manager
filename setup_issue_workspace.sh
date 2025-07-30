@@ -20,6 +20,41 @@ set -e
 REPOSITORIES_DIR="${REPOSITORIES_DIR:-repositories}"  # リポジトリクローン先ディレクトリ
 WORKSPACES_DIR="${WORKSPACES_DIR:-issues}"            # ワークスペース作成先ディレクトリ
 
+# カスタムブランチ名のバリデーション関数
+validate_custom_branch_name() {
+  local branch_name="$1"
+  
+  # 空文字列チェック
+  if [ -z "$branch_name" ]; then
+    echo "[ERROR] カスタムブランチ名が空です。有効な名前を指定してください"
+    return 1
+  fi
+  
+  # マルチバイト文字チェック
+  if printf '%s' "$branch_name" | LC_ALL=C grep -q '[^ -~]'; then
+    echo "[ERROR] カスタムブランチ名にマルチバイト文字が含まれています: '$branch_name'"
+    echo "[INFO] 英数字、ハイフン、アンダースコアのみ使用してください"
+    echo "[INFO] 例: feature-auth, phase1_testing, bug-fix-123"
+    return 1
+  fi
+  
+  # サニタイズ後の文字列が空になるかチェック
+  local sanitized=$(echo "$branch_name" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+  if [ -z "$sanitized" ]; then
+    echo "[ERROR] カスタムブランチ名に有効な文字が含まれていません: '$branch_name'"
+    echo "[INFO] 英数字、ハイフン、アンダースコアのみ使用してください"
+    return 1
+  fi
+  
+  # 長すぎる名前のチェック（Git制限対応）
+  if [ ${#sanitized} -gt 50 ]; then
+    echo "[ERROR] カスタムブランチ名が長すぎます (最大50文字): '$branch_name'"
+    return 1
+  fi
+  
+  return 0
+}
+
 # リポジトリの実際の所属組織名を検出する関数
 detect_repo_org() {
   local repo_name="$1"
@@ -44,14 +79,20 @@ detect_repo_org() {
 # 使用方法を表示する関数
 show_usage() {
   echo "Usage:"
-  echo "  $0 create <issue_url> <repo1> [<repo2> ...]"
+  echo "  $0 create <issue_url> <repo1> [<repo2> ...] [--branch <custom_branch_name>]"
   echo "  $0 update <workspace_dir> <repo1> [<repo2> ...]"
   echo "  $0 update <repo1> [<repo2> ...]  # インタラクティブにワークスペースを選択"
   echo "  $0 update                        # 完全インタラクティブモード"
   echo ""
+  echo "Options:"
+  echo "  --branch, -b <name>    カスタムブランチ名でワークスペースを作成"
+  echo ""
   echo "Examples:"
   echo "  # 新しいワークスペースを作成"
   echo "  $0 create https://github.com/owner/repo/issues/123 frontend backend"
+  echo ""
+  echo "  # カスタムブランチ名でワークスペースを作成"
+  echo "  $0 create https://github.com/owner/repo/issues/123 frontend backend --branch phase1-auth"
   echo ""
   echo "  # 既存のワークスペースにリポジトリを追加（ディレクトリ指定）"
   echo "  $0 update \$WORKSPACES_DIR/Feature_request_repo-123 api database"
@@ -85,7 +126,44 @@ case "$COMMAND" in
     MODE="create"
     ISSUE_URL="$1"
     shift
-    REPO_LIST=("$@")
+    
+    # --branch オプションの解析
+    CUSTOM_BRANCH_NAME=""
+    CUSTOM_BRANCH_SPECIFIED=false
+    REPO_LIST=()
+    
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --branch|-b)
+          if [ $# -lt 2 ]; then
+            echo "[ERROR] --branch オプションには値が必要です"
+            exit 1
+          fi
+          CUSTOM_BRANCH_NAME="$2"
+          # 空文字列が渡された場合も検証対象とするためフラグを設定
+          CUSTOM_BRANCH_SPECIFIED=true
+          shift 2
+          ;;
+        *)
+          REPO_LIST+=("$1")
+          shift
+          ;;
+      esac
+    done
+    
+    # リポジトリが指定されていない場合はエラー
+    if [ ${#REPO_LIST[@]} -eq 0 ]; then
+      echo "[ERROR] 少なくとも1つのリポジトリを指定してください"
+      show_usage
+      exit 1
+    fi
+    
+    # カスタムブランチ名のバリデーション（issue情報取得前に実行）
+    if [ "$CUSTOM_BRANCH_SPECIFIED" = true ]; then
+      if ! validate_custom_branch_name "$CUSTOM_BRANCH_NAME"; then
+        exit 1
+      fi
+    fi
     ;;
   "update")
     MODE="update"
@@ -257,23 +335,48 @@ if [ "$MODE" = "create" ]; then
     exit 1
   fi
 
-  # ディレクトリ名生成（マルチバイト文字チェック）
-  # 改行文字を除去してからチェック
-  CLEAN_TITLE=$(echo "$ISSUE_TITLE" | tr -d '\n\r')
-  if printf '%s' "$CLEAN_TITLE" | LC_ALL=C grep -q '[^ -~]'; then
-    # マルチバイト文字が含まれている場合はissue番号のみ使用
-    ISSUE_DIR="${REPO_NAME}-${ISSUE_NUMBER}"
+  # ディレクトリ名生成（カスタムブランチ名またはマルチバイト文字チェック）
+  if [ "$CUSTOM_BRANCH_SPECIFIED" = true ]; then
+    # カスタムブランチ名が指定されている場合
+    SAFE_CUSTOM_BRANCH=$(echo "$CUSTOM_BRANCH_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+    ISSUE_DIR="${SAFE_CUSTOM_BRANCH}_${REPO_NAME}-${ISSUE_NUMBER}"
+    SAFE_BRANCH_TITLE="$SAFE_CUSTOM_BRANCH"
   else
-    # 英数字のみの場合は従来通り
-    SAFE_TITLE=$(echo "$CLEAN_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
-    ISSUE_DIR="${SAFE_TITLE}_${REPO_NAME}-${ISSUE_NUMBER}"
+    # 従来通りissueタイトルから生成
+    # 改行文字を除去してからチェック
+    CLEAN_TITLE=$(echo "$ISSUE_TITLE" | tr -d '\n\r')
+    if printf '%s' "$CLEAN_TITLE" | LC_ALL=C grep -q '[^ -~]'; then
+      # マルチバイト文字が含まれている場合はissue番号のみ使用
+      ISSUE_DIR="${REPO_NAME}-${ISSUE_NUMBER}"
+      SAFE_BRANCH_TITLE=""
+    else
+      # 英数字のみの場合は従来通り
+      SAFE_TITLE=$(echo "$CLEAN_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+      ISSUE_DIR="${SAFE_TITLE}_${REPO_NAME}-${ISSUE_NUMBER}"
+      SAFE_BRANCH_TITLE="$SAFE_TITLE"
+    fi
   fi
   ISSUE_PATH="$WORKSPACES_DIR/$ISSUE_DIR"
 
   # ワークスペースディレクトリの状態をチェック
   if [ -d "$ISSUE_PATH" ]; then
-    echo "[INFO] 既存のワークスペースディレクトリが見つかりました: $ISSUE_PATH"
-    echo "[INFO] 新しいリポジトリを追加します..."
+    echo "[ERROR] 同名のワークスペースが既に存在します: $ISSUE_PATH"
+    echo "[INFO] 既存のワークスペース内容:"
+    for dir in "$ISSUE_PATH"/*/ ; do
+      if [ -d "$dir" ]; then
+        basename="$(basename "$dir")"
+        echo "  - $basename"
+      fi
+    done
+    echo ""
+    echo "[INFO] 解決方法:"
+    echo "  1. 既存のワークスペースに追加する場合:"
+    echo "     $0 update \"$ISSUE_PATH\" ${REPO_LIST[*]}"
+    echo "  2. 別の名前でワークスペースを作成する場合:"
+    echo "     $0 create \"$ISSUE_URL\" ${REPO_LIST[*]} --branch <カスタムブランチ名>"
+    echo "  3. 既存のワークスペースを削除してから再作成する場合:"
+    echo "     rm -rf \"$ISSUE_PATH\" && $0 create \"$ISSUE_URL\" ${REPO_LIST[*]}"
+    exit 1
   else
     mkdir -p "$ISSUE_PATH"
     echo "[INFO] 新しいワークスペースディレクトリを作成しました: $ISSUE_PATH"
@@ -285,7 +388,8 @@ ORG_NAME="$ORG_NAME"
 REPO_NAME="$REPO_NAME"
 ISSUE_NUMBER="$ISSUE_NUMBER"
 ISSUE_TITLE="$ISSUE_TITLE"
-SAFE_BRANCH_TITLE="$(echo "$ISSUE_TITLE" | tr ' ' '_' | tr -cd '[:alnum:]_-')"
+SAFE_BRANCH_TITLE="$SAFE_BRANCH_TITLE"
+CUSTOM_BRANCH_NAME="$CUSTOM_BRANCH_NAME"
 EOF
     echo "[INFO] Issue情報を保存しました: $ISSUE_PATH/.issue-info"
   fi

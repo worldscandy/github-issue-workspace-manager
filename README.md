@@ -11,6 +11,7 @@ GitHub issueの作業用に複数リポジトリのワークスペースを自�
 - **Issue情報の永続化**: `.issue-info`ファイルでissue情報を保存・継承
 - **重複チェック**: 既存リポジトリの自動検出とスキップ
 - **自動ブランチ作成**: issue番号とタイトルから一貫したブランチ名を生成
+- **カスタムブランチ名対応**: 任意のブランチ名で複数ワークスペースを作成可能
 - **日本語対応**: マルチバイト文字を含むissueタイトルにも対応
 - **main/masterブランチ対応**: 自動的に適切なデフォルトブランチを検出
 - **エラー復旧**: 孤立したworktreeの自動クリーンアップ
@@ -54,8 +55,11 @@ cd ../../
 # スクリプトに実行権限を付与
 chmod +x setup_issue_workspace.sh
 
-# 新しいワークスペースを作成
+# 新しいワークスペースを作成（デフォルト）
 ./setup_issue_workspace.sh create https://github.com/owner/repo/issues/123 repo1 repo2
+
+# カスタムブランチ名でワークスペースを作成
+./setup_issue_workspace.sh create https://github.com/owner/repo/issues/123 repo1 repo2 --branch phase1-auth
 
 # 既存のワークスペースにリポジトリを追加
 ./setup_issue_workspace.sh update issues/workspace_name new-repo
@@ -71,13 +75,22 @@ chmod +x setup_issue_workspace.sh
 #### 1. 新しいワークスペース作成
 
 ```bash
-./setup_issue_workspace.sh create <issue_url> <repo1> [repo2 ...]
+./setup_issue_workspace.sh create <issue_url> <repo1> [repo2 ...] [--branch <custom_branch_name>]
 ```
+
+**オプション:**
+- `--branch, -b <name>`: カスタムブランチ名を指定（英数字、ハイフン、アンダースコアのみ）
 
 **例:**
 ```bash
-# 新しいワークスペースを作成（組織/ユーザー名はIssue URLから自動抽出）
+# デフォルト（issueタイトルから自動生成）
 ./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/123 repo1 repo2
+
+# カスタムブランチ名を指定
+./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/123 repo1 repo2 --branch phase1-auth
+
+# 短縮オプション
+./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/123 repo1 repo2 -b feature-payments
 ```
 
 #### 2. 既存ワークスペースの更新
@@ -129,8 +142,9 @@ REPOSITORIES_DIR=repos DEFAULT_BRANCH=main MAX_DEPTH=2 ./update_all_repositories
 
 ```
 issues/                              # ワークスペースディレクトリ（変更可能）
-└── <Issue_Title>_<repo>-<issue_number>/  # 英語の場合
-│   または <repo>-<issue_number>/     # 日本語を含む場合
+├── <Issue_Title>_<repo>-<issue_number>/    # デフォルト（英語）
+├── <repo>-<issue_number>/                  # デフォルト（日本語含む）
+└── <custom_branch_name>_<repo>-<issue_number>/  # カスタムブランチ名指定時
     ├── .issue-info                  # Issue情報保存ファイル
     ├── org-name-1/                  # 各リポジトリの実際の所属組織別ディレクトリ
     │   ├── repo1/                   # Git worktreeディレクトリ
@@ -164,7 +178,19 @@ ORG_NAME="owner"
 REPO_NAME="repo"
 ISSUE_NUMBER="123"
 ISSUE_TITLE="Feature Request"
-SAFE_BRANCH_TITLE="Feature_Request"
+SAFE_BRANCH_TITLE="Feature_Request"    # デフォルト時
+CUSTOM_BRANCH_NAME=""                   # カスタムブランチ名（空文字列または指定値）
+```
+
+**カスタムブランチ名指定時の例:**
+```bash
+ISSUE_URL="https://github.com/owner/repo/issues/123"
+ORG_NAME="owner"
+REPO_NAME="repo"
+ISSUE_NUMBER="123"
+ISSUE_TITLE="Feature Request"
+SAFE_BRANCH_TITLE="phase1-auth"
+CUSTOM_BRANCH_NAME="phase1-auth"
 ```
 
 これにより、updateモードでも一貫したブランチ名とリポジトリ設定が継承されます。
@@ -173,25 +199,30 @@ SAFE_BRANCH_TITLE="Feature_Request"
 
 各リポジトリには以下の形式でブランチが作成されます：
 
-#### 英語のissueタイトルの場合
+#### デフォルト（英語のissueタイトル）
 ```
 <issue_origin_repo>-<issue_number>/<sanitized_issue_title>
 ```
-
-**例:**
-Issue URLが `https://github.com/owner/main-repo/issues/123` でタイトルが "Feature Request" の場合：
+**例:** Issue URLが `https://github.com/owner/main-repo/issues/123` でタイトルが "Feature Request" の場合：
 - `main-repo-123/Feature_Request` (全リポジトリで共通)
 
-#### 日本語を含むissueタイトルの場合
+#### デフォルト（日本語を含むissueタイトル）
 ```
 <issue_origin_repo>-<issue_number>
 ```
-
-**例:**
-Issue URLが `https://github.com/owner/main-repo/issues/456` でタイトルが "新機能の実装" の場合：
+**例:** Issue URLが `https://github.com/owner/main-repo/issues/456` でタイトルが "新機能の実装" の場合：
 - `main-repo-456` (全リポジトリで共通)
 
-**注意**: マルチバイト文字（日本語、中国語など）が含まれている場合は、Git ブランチ名の制約を考慮してissue番号のみを使用します。
+#### カスタムブランチ名指定時
+```
+<issue_origin_repo>-<issue_number>/<custom_branch_name>
+```
+**例:** Issue URLが `https://github.com/owner/main-repo/issues/123` でカスタムブランチ名が "phase1-auth" の場合：
+- `main-repo-123/phase1-auth` (全リポジトリで共通)
+
+**注意**: 
+- デフォルトでマルチバイト文字（日本語、中国語など）が含まれている場合は、Git ブランチ名の制約を考慮してissue番号のみを使用します
+- カスタムブランチ名は英数字、ハイフン、アンダースコアのみ使用可能です
 
 ## 🎯 特徴
 
@@ -261,8 +292,7 @@ export REPOSITORIES_DIR=my-repos
 ### 1. 新機能開発のワークフロー
 
 ```bash
-# 1. Issue URLから新しいワークスペースを作成
-# 各リポジトリの所属組織が自動検出され、適切な組織ディレクトリに配置されます
+# 1. Issue URLから新しいワークスペースを作成（デフォルト）
 ./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/456 repo1 repo2 repo3
 
 # 例：以下のような構造が自動作成されます
@@ -273,8 +303,16 @@ export REPOSITORIES_DIR=my-repos
 # └── personal-org/
 #     └── repo3/     # personal-org組織のリポジトリ
 
-# 2. 開発中に追加のリポジトリが必要になった場合
-./setup_issue_workspace.sh update issues/New_Feature_main-repo-456 additional-repo
+# 2. 同じissueで段階的な作業（カスタムブランチ名）
+./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/456 repo1 repo2 --branch phase1-auth
+./setup_issue_workspace.sh create https://github.com/owner/main-repo/issues/456 repo1 repo3 --branch phase2-database
+
+# 結果：独立した2つのワークスペースで並行作業可能
+# - issues/phase1-auth_main-repo-456/
+# - issues/phase2-database_main-repo-456/
+
+# 3. 既存ワークスペースに追加のリポジトリが必要になった場合
+./setup_issue_workspace.sh update issues/phase1-auth_main-repo-456 additional-repo
 ```
 
 ### 2. 複数リポジトリの一括更新
@@ -365,3 +403,23 @@ A: 最新版のスクリプトではマルチバイト文字に対応してい�
 
 **Q: "masterブランチが存在しません" エラー**
 A: 最新版のスクリプトではmain/masterブランチを自動検出します。どちらも存在しない場合はリポジトリの状態を確認してください。
+
+**Q: カスタムブランチ名でエラーが発生する**
+A: カスタムブランチ名は英数字、ハイフン、アンダースコアのみ使用可能です：
+```bash
+# ❌ 不正な例
+./setup_issue_workspace.sh create URL repo --branch "機能追加"
+./setup_issue_workspace.sh create URL repo --branch ""
+./setup_issue_workspace.sh create URL repo --branch "feature/auth@system"
+
+# ✅ 正しい例
+./setup_issue_workspace.sh create URL repo --branch "feature-auth"
+./setup_issue_workspace.sh create URL repo --branch "phase1_testing"
+./setup_issue_workspace.sh create URL repo --branch "bug-fix-123"
+```
+
+**Q: 同名のワークスペースが既に存在する**
+A: 以下の解決方法から選択してください：
+1. 既存ワークスペースに追加: `./setup_issue_workspace.sh update "ワークスペース名" リポジトリ名`
+2. 別のカスタムブランチ名で作成: `--branch 別の名前`
+3. 既存ワークスペースを削除してから再作成: `rm -rf "ワークスペース名"`
