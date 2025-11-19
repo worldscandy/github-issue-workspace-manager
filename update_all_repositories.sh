@@ -126,8 +126,8 @@ process_repository() {
   echo "現在のブランチ: $current_branch"
   
   echo "fetch中..."
-  if ! git fetch; then
-    echo "[ERROR] fetchに失敗しました"
+  if ! timeout 30 git fetch; then
+    echo "[ERROR] fetchに失敗しました（タイムアウト含む）"
     ERROR_REPOS=$((ERROR_REPOS + 1))
     ERROR_LIST+=("$repo_name")
     cd - > /dev/null || true
@@ -149,7 +149,7 @@ process_repository() {
       if git checkout "$DEFAULT_BRANCH"; then
         # メインのpullを実行（submoduleは含めない）
         echo "$DEFAULT_BRANCH でpull実行"
-        if git pull --no-recurse-submodules; then
+        if timeout 60 git pull --no-recurse-submodules; then
           echo "[SUCCESS] メインリポジトリの更新完了"
           UPDATED_REPOS=$((UPDATED_REPOS + 1))
 
