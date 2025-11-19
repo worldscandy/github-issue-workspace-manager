@@ -6,6 +6,8 @@
 REPOSITORIES_DIR="${REPOSITORIES_DIR:-repositories}"  # リポジトリディレクトリ
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-master}"            # デフォルトブランチ
 MAX_DEPTH="${MAX_DEPTH:-3}"                           # 最大探索深度
+TIMEOUT_SECONDS=1800                                  # タイムアウト時間（秒、デフォルト30分）
+SCRIPT_START_TIME=$(date +%s)                         # スクリプト開始時刻
 
 # 使用方法を表示
 show_usage() {
@@ -62,6 +64,7 @@ echo "リポジトリ一括更新スクリプト"
 echo "対象ディレクトリ: $REPOSITORIES_DIR"
 echo "デフォルトブランチ: $DEFAULT_BRANCH"
 echo "最大探索深度: $MAX_DEPTH"
+echo "タイムアウト時間: $((TIMEOUT_SECONDS / 60))分"
 echo "=========================================="
 echo ""
 
@@ -80,12 +83,33 @@ declare -i ERROR_REPOS=0
 declare -a SKIPPED_LIST=()
 declare -a ERROR_LIST=()
 
+# タイムアウトをチェックする関数
+check_timeout() {
+  local current_time=$(date +%s)
+  local elapsed=$((current_time - SCRIPT_START_TIME))
+
+  if [ $elapsed -gt $TIMEOUT_SECONDS ]; then
+    echo ""
+    echo "=========================================="
+    echo "[警告] タイムアウト時間（$((TIMEOUT_SECONDS / 60))分）に達しました"
+    echo "処理を中止します"
+    echo "=========================================="
+    return 1
+  fi
+  return 0
+}
+
 # リポジトリ処理を行う関数
 process_repository() {
   local repo_path="$1"
   local repo_name
   repo_name=$(basename "$repo_path")
-  
+
+  # タイムアウト確認
+  if ! check_timeout; then
+    return
+  fi
+
   TOTAL_REPOS=$((TOTAL_REPOS + 1))
   echo "=============================="
   echo "リポジトリ: $repo_name ($repo_path)"
@@ -123,18 +147,21 @@ process_repository() {
     else
       echo "$DEFAULT_BRANCH ブランチにcheckout中..."
       if git checkout "$DEFAULT_BRANCH"; then
-        # submoduleが存在する場合は事前に状態を同期
-        if [ -f ".gitmodules" ] && [ -s ".gitmodules" ]; then
-          echo "submodule状態同期中..."
-          if ! git submodule update --init; then
-            echo "[WARNING] submodule同期に失敗しました"
-          fi
-        fi
-        
+        # メインのpullを実行（submoduleは含めない）
         echo "$DEFAULT_BRANCH でpull実行"
-        if git pull; then
-          echo "[SUCCESS] 更新完了"
+        if git pull --no-recurse-submodules; then
+          echo "[SUCCESS] メインリポジトリの更新完了"
           UPDATED_REPOS=$((UPDATED_REPOS + 1))
+
+          # submoduleが存在する場合は状態を同期（非ブロッキング）
+          if [ -f ".gitmodules" ] && [ -s ".gitmodules" ]; then
+            echo "submodule状態同期中..."
+            if git submodule update --init 2>/dev/null; then
+              echo "[OK] submodule同期完了"
+            else
+              echo "[WARNING] submodule同期に失敗しました（メインリポジトリは更新済み）"
+            fi
+          fi
         else
           echo "[ERROR] pullに失敗しました"
           ERROR_REPOS=$((ERROR_REPOS + 1))
@@ -161,11 +188,16 @@ process_repository() {
 find_repositories() {
   local search_dir="$1"
   local current_depth="$2"
-  
+
+  # タイムアウト確認
+  if ! check_timeout; then
+    return
+  fi
+
   if [ "$current_depth" -gt "$MAX_DEPTH" ]; then
     return
   fi
-  
+
   for item in "$search_dir"/*; do
     if [ -d "$item" ]; then
       if [ -d "$item/.git" ]; then
