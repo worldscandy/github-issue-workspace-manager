@@ -61,6 +61,9 @@ chmod +x setup_issue_workspace.sh
 # カスタムブランチ名でワークスペースを作成
 ./setup_issue_workspace.sh create https://github.com/owner/repo/issues/123 repo1 repo2 --branch phase1-auth
 
+# issue を立てずにワークスペースを作成
+./setup_issue_workspace.sh create --branch refactor-config repo1 repo2
+
 # 既存のワークスペースにリポジトリを追加
 ./setup_issue_workspace.sh update issues/workspace_name new-repo
 
@@ -76,10 +79,25 @@ chmod +x setup_issue_workspace.sh
 
 ```bash
 ./setup_issue_workspace.sh create <issue_url> <repo1> [repo2 ...] [--branch <custom_branch_name>]
+
+# issue を使わない場合（--branch が必須）
+./setup_issue_workspace.sh create --branch <custom_branch_name> <repo1> [repo2 ...]
 ```
 
 **オプション:**
 - `--branch, -b <name>`: カスタムブランチ名を指定（英数字、ハイフン、アンダースコアのみ）
+
+issue URL を省略すると **issue なしモード**になり、`--branch` が必須になります。
+対応する issue が無い作業（調査、ドキュメント整備、PR だけで完結する変更など）で使います。
+
+| | issue あり | issue なし |
+|---|---|---|
+| ディレクトリ名 | `<branch>_<repo>-<issue番号>` | `<branch>` |
+| ブランチ名 | `<repo>-<issue番号>/<branch>` | `<branch>` |
+| `.issue-info` | issue 情報を保存 | `NO_ISSUE="true"` を保存し、issue 由来の項目は空 |
+
+第1引数が `http` で始まるのに issue URL の形式でない場合はエラーになります
+（PR URL の渡し間違いを防ぐため）。
 
 **例:**
 ```bash
