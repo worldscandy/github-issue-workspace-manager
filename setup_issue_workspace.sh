@@ -80,6 +80,7 @@ detect_repo_org() {
 show_usage() {
   echo "Usage:"
   echo "  $0 create <issue_url> <repo1> [<repo2> ...] [--branch <custom_branch_name>]"
+  echo "  $0 create --branch <custom_branch_name> <repo1> [<repo2> ...]   # issueなし"
   echo "  $0 update <workspace_dir> <repo1> [<repo2> ...]"
   echo "  $0 update <repo1> [<repo2> ...]  # インタラクティブにワークスペースを選択"
   echo "  $0 update                        # 完全インタラクティブモード"
@@ -93,6 +94,9 @@ show_usage() {
   echo ""
   echo "  # カスタムブランチ名でワークスペースを作成"
   echo "  $0 create https://github.com/owner/repo/issues/123 frontend backend --branch phase1-auth"
+  echo ""
+  echo "  # issueを立てずにワークスペースを作成（--branch が必須）"
+  echo "  $0 create --branch refactor-config frontend backend"
   echo ""
   echo "  # 既存のワークスペースにリポジトリを追加（ディレクトリ指定）"
   echo "  $0 update \$WORKSPACES_DIR/Feature_request_repo-123 api database"
@@ -118,14 +122,29 @@ shift
 
 case "$COMMAND" in
   "create")
-    if [ $# -lt 2 ]; then
-      echo "[ERROR] createモードには少なくとも issue_url と repo1 が必要です"
+    if [ $# -lt 1 ]; then
+      echo "[ERROR] createモードには少なくとも1つのリポジトリが必要です"
       show_usage
       exit 1
     fi
     MODE="create"
-    ISSUE_URL="$1"
-    shift
+
+    # 第1引数が issue URL かどうかで、issueあり/なしを判定する
+    NO_ISSUE=false
+    if [[ "$1" =~ ^https?://github\.com/[^/]+/[^/]+/issues/[0-9]+ ]]; then
+      ISSUE_URL="$1"
+      shift
+    elif [[ "$1" =~ ^https?:// ]]; then
+      # URLらしき文字列だが issue URL ではない。リポジトリ名として扱うと
+      # 後段で分かりにくく失敗するため、ここで止める
+      echo "[ERROR] issue URLの形式が不正です: $1"
+      echo "[INFO] 期待する形式: https://github.com/<org>/<repo>/issues/<number>"
+      echo "[INFO] issueを使わない場合はURLを渡さず --branch <name> を指定してください"
+      exit 1
+    else
+      NO_ISSUE=true
+      ISSUE_URL=""
+    fi
     
     # --branch オプションの解析
     CUSTOM_BRANCH_NAME=""
@@ -158,6 +177,14 @@ case "$COMMAND" in
       exit 1
     fi
     
+    # issueなしモードでは --branch が必須（ディレクトリ名とブランチ名の元になるため）
+    if [ "$NO_ISSUE" = true ] && [ "$CUSTOM_BRANCH_SPECIFIED" != true ]; then
+      echo "[ERROR] issue URLを指定しない場合は --branch <name> が必要です"
+      echo "[INFO] issue URLの形式: https://github.com/<org>/<repo>/issues/<number>"
+      show_usage
+      exit 1
+    fi
+
     # カスタムブランチ名のバリデーション（issue情報取得前に実行）
     if [ "$CUSTOM_BRANCH_SPECIFIED" = true ]; then
       if ! validate_custom_branch_name "$CUSTOM_BRANCH_NAME"; then
@@ -317,26 +344,40 @@ esac
 
 # createモードとupdateモードの処理を分岐
 if [ "$MODE" = "create" ]; then
-  # URLから org, repo, issue番号 を抽出
-  if [[ "$ISSUE_URL" =~ github.com/([^/]+)/([^/]+)/issues/([0-9]+) ]]; then
-    ORG_NAME="${BASH_REMATCH[1]}"
-    REPO_NAME="${BASH_REMATCH[2]}"
-    ISSUE_NUMBER="${BASH_REMATCH[3]}"
-    echo "[INFO] 抽出された情報: 組織/ユーザー=$ORG_NAME, リポジトリ=$REPO_NAME, Issue番号=$ISSUE_NUMBER"
+  if [ "$NO_ISSUE" = true ]; then
+    # issueなしモード: issue由来の情報は持たない
+    ORG_NAME=""
+    REPO_NAME=""
+    ISSUE_NUMBER=""
+    ISSUE_TITLE="$CUSTOM_BRANCH_NAME"
+    echo "[INFO] issueなしモードで作成します: ブランチ名=$CUSTOM_BRANCH_NAME"
   else
-    echo "[ERROR] issue URLの形式が不正です: $ISSUE_URL"
-    exit 1
-  fi
+    # URLから org, repo, issue番号 を抽出
+    if [[ "$ISSUE_URL" =~ github.com/([^/]+)/([^/]+)/issues/([0-9]+) ]]; then
+      ORG_NAME="${BASH_REMATCH[1]}"
+      REPO_NAME="${BASH_REMATCH[2]}"
+      ISSUE_NUMBER="${BASH_REMATCH[3]}"
+      echo "[INFO] 抽出された情報: 組織/ユーザー=$ORG_NAME, リポジトリ=$REPO_NAME, Issue番号=$ISSUE_NUMBER"
+    else
+      echo "[ERROR] issue URLの形式が不正です: $ISSUE_URL"
+      exit 1
+    fi
 
-  echo "[INFO] ghコマンドでissueタイトルを取得中..."
-  ISSUE_TITLE=$(gh issue view "$ISSUE_URL" --json title | jq -r .title)
-  if [ -z "$ISSUE_TITLE" ] || [ "$ISSUE_TITLE" = "null" ]; then
-    echo "[ERROR] ghコマンドでissueタイトル取得に失敗しました。gh認証やURLをご確認ください。"
-    exit 1
+    echo "[INFO] ghコマンドでissueタイトルを取得中..."
+    ISSUE_TITLE=$(gh issue view "$ISSUE_URL" --json title | jq -r .title)
+    if [ -z "$ISSUE_TITLE" ] || [ "$ISSUE_TITLE" = "null" ]; then
+      echo "[ERROR] ghコマンドでissueタイトル取得に失敗しました。gh認証やURLをご確認ください。"
+      exit 1
+    fi
   fi
 
   # ディレクトリ名生成（カスタムブランチ名またはマルチバイト文字チェック）
-  if [ "$CUSTOM_BRANCH_SPECIFIED" = true ]; then
+  if [ "$NO_ISSUE" = true ]; then
+    # issueなし: カスタムブランチ名のみをディレクトリ名にする
+    SAFE_CUSTOM_BRANCH=$(echo "$CUSTOM_BRANCH_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+    ISSUE_DIR="$SAFE_CUSTOM_BRANCH"
+    SAFE_BRANCH_TITLE="$SAFE_CUSTOM_BRANCH"
+  elif [ "$CUSTOM_BRANCH_SPECIFIED" = true ]; then
     # カスタムブランチ名が指定されている場合
     SAFE_CUSTOM_BRANCH=$(echo "$CUSTOM_BRANCH_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
     ISSUE_DIR="${SAFE_CUSTOM_BRANCH}_${REPO_NAME}-${ISSUE_NUMBER}"
@@ -373,9 +414,17 @@ if [ "$MODE" = "create" ]; then
     echo "  1. 既存のワークスペースに追加する場合:"
     echo "     $0 update \"$ISSUE_PATH\" ${REPO_LIST[*]}"
     echo "  2. 別の名前でワークスペースを作成する場合:"
-    echo "     $0 create \"$ISSUE_URL\" ${REPO_LIST[*]} --branch <カスタムブランチ名>"
+    if [ "$NO_ISSUE" = true ]; then
+      echo "     $0 create --branch <カスタムブランチ名> ${REPO_LIST[*]}"
+    else
+      echo "     $0 create \"$ISSUE_URL\" ${REPO_LIST[*]} --branch <カスタムブランチ名>"
+    fi
     echo "  3. 既存のワークスペースを削除してから再作成する場合:"
-    echo "     rm -rf \"$ISSUE_PATH\" && $0 create \"$ISSUE_URL\" ${REPO_LIST[*]}"
+    if [ "$NO_ISSUE" = true ]; then
+      echo "     rm -rf \"$ISSUE_PATH\" && $0 create --branch \"$CUSTOM_BRANCH_NAME\" ${REPO_LIST[*]}"
+    else
+      echo "     rm -rf \"$ISSUE_PATH\" && $0 create \"$ISSUE_URL\" ${REPO_LIST[*]}"
+    fi
     exit 1
   else
     mkdir -p "$ISSUE_PATH"
@@ -390,6 +439,7 @@ ISSUE_NUMBER="$ISSUE_NUMBER"
 ISSUE_TITLE="$ISSUE_TITLE"
 SAFE_BRANCH_TITLE="$SAFE_BRANCH_TITLE"
 CUSTOM_BRANCH_NAME="$CUSTOM_BRANCH_NAME"
+NO_ISSUE="$NO_ISSUE"
 EOF
     echo "[INFO] Issue情報を保存しました: $ISSUE_PATH/.issue-info"
   fi
@@ -412,6 +462,9 @@ elif [ "$MODE" = "update" ]; then
   
   echo "[INFO] 既存のワークスペースを更新します: $ISSUE_PATH"
   
+  # 旧形式の .issue-info には NO_ISSUE が無いため、既定値を先に入れておく
+  NO_ISSUE=false
+
   # .issue-info ファイルからissue情報を読み取り
   ISSUE_INFO_FILE="$ISSUE_PATH/.issue-info"
   if [ -f "$ISSUE_INFO_FILE" ]; then
@@ -498,7 +551,10 @@ for repo in "${REPO_LIST[@]}"; do
   cd "$SOURCE_REPO_PATH"
   git fetch
   # ブランチ名生成（マルチバイト文字チェック）
-  if [ -z "$SAFE_BRANCH_TITLE" ]; then
+  if [ "$NO_ISSUE" = true ]; then
+    # issueなし: カスタムブランチ名をそのままブランチ名にする
+    BRANCH_NAME="$SAFE_BRANCH_TITLE"
+  elif [ -z "$SAFE_BRANCH_TITLE" ]; then
     # 改行文字を除去してからチェック
     CLEAN_TITLE=$(echo "$ISSUE_TITLE" | tr -d '\n\r')
     if printf '%s' "$CLEAN_TITLE" | LC_ALL=C grep -q '[^ -~]'; then
